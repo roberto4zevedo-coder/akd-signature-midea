@@ -23,7 +23,6 @@ async function getAccessToken() {
     body: params,
   });
 
-  // 🔍 Log d'erreur détaillé si échec
   if (!res.ok) {
     const text = await res.text();
     console.error("❌ Auth Microsoft Graph échouée :", text);
@@ -35,20 +34,32 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-// ====== RECHERCHE DU FICHIER EXCEL SUR ONEDRIVE ======
+// ====== RECHERCHE DU FICHIER DANS UN SOUS-DOSSIER ======
 async function findExcelFile(token) {
+  // Chemin complet du fichier dans ton OneDrive perso :
+  const path = `/Bureau/Excel VB SIGNATURE/${EXCEL_FILE_NAME}`;
+
   const res = await fetch(
-    `https://graph.microsoft.com/v1.0/me/drive/root/search(q='${encodeURIComponent(EXCEL_FILE_NAME)}')`,
+    `https://graph.microsoft.com/v1.0/me/drive/root:${encodeURI(path)}:`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+
+  if (res.status === 404) {
+    throw new Error(`❌ Fichier non trouvé à ce chemin : ${path}`);
+  }
+
   const data = await res.json();
-  if (!data.value || !data.value.length)
-    throw new Error(`❌ Fichier ${EXCEL_FILE_NAME} introuvable sur OneDrive`);
-  console.log(`📁 Fichier trouvé : ${data.value[0].name}`);
-  return data.value[0];
+
+  if (!data.id) {
+    console.error("⚠️ Réponse inattendue :", data);
+    throw new Error(`❌ Impossible d'accéder au fichier ${EXCEL_FILE_NAME}`);
+  }
+
+  console.log(`📁 Fichier trouvé : ${data.name}`);
+  return data;
 }
 
-// ====== MISE À JOUR D'UNE LIGNE DANS LE TABLEAU EXCEL ======
+// ====== MISE À JOUR DU TABLEAU EXCEL ======
 export async function markAsSigned(record) {
   const token = await getAccessToken();
   const file = await findExcelFile(token);
@@ -84,14 +95,12 @@ export async function markAsSigned(record) {
     return;
   }
 
-  // Prépare les nouvelles valeurs
   const updatedValues = [
     "✅ Signé",
     `https://akd-signature-midea.onrender.com/files/${record.file_name}`,
     dayjs(record.timestamp_iso).format("DD/MM/YYYY HH:mm"),
   ];
 
-  // Met à jour la ligne
   const patchUrl = `${workbookBase}/tables/${tableId}/rows/itemAt(index=${targetRow.index})/range`;
   await fetch(patchUrl, {
     method: "PATCH",
