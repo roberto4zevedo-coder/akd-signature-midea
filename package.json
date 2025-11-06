@@ -1,0 +1,22 @@
+{
+  "name": "landing-page-signature-midea",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Landing page de signature électronique Midea",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "pdf": "node generate-pdf.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "csv-parse": "^5.5.0",
+    "dayjs": "^1.11.10",
+    "dotenv": "^16.3.1",
+    "express": "^4.19.2",
+    "nodemailer": "^7.0.10",
+    "pdfkit": "^0.15.0",
+    "uuid": "^9.0.1",
+    "xlsx": "^0.18.5"
+  }
+}

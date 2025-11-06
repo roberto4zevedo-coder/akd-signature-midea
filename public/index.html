@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AKD — Signature de présence</title>
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Signature Pad -->
+  <script src="https://unpkg.com/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <main class="max-w-xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold">AKD — Signature de présence</h1>
+      <p class="text-sm text-gray-600">Veuillez vérifier vos informations puis signer.</p>
+    </header>
+
+    <section id="info" class="bg-white rounded-xl shadow p-4 mb-6">
+      <div class="grid grid-cols-1 gap-3">
+        <div>
+          <label class="text-sm text-gray-500">Nom et prénom</label>
+          <div id="displayName" class="font-medium"></div>
+        </div>
+        <div>
+          <label class="text-sm text-gray-500">Email</label>
+          <div id="displayEmail" class="font-medium"></div>
+        </div>
+        <div>
+          <label class="text-sm text-gray-500">Session</label>
+          <div id="displaySession" class="font-medium"></div>
+        </div>
+        <div>
+          <label class="text-sm text-gray-500">Identifiant participant</label>
+          <div id="displayId" class="font-medium"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow p-4 mb-6">
+      <h2 class="font-semibold mb-3">Votre signature</h2>
+      <div class="border rounded-xl overflow-hidden bg-gray-100">
+        <canvas id="signature-canvas" class="w-full h-56 block"></canvas>
+      </div>
+      <div class="flex items-center gap-3 mt-3">
+        <button id="clearBtn" class="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300">Effacer</button>
+        <label class="flex items-start gap-2 text-sm select-none">
+          <input id="consent" type="checkbox" class="mt-1" />
+          <span>Je certifie être présent et j'autorise l’enregistrement de ma signature.</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="flex items-center justify-between">
+      <a id="backLink" href="#" class="text-sm text-gray-500 hover:underline">Retour</a>
+      <button id="submitBtn" class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+        Envoyer ma signature
+      </button>
+    </section>
+
+    <p id="status" class="mt-4 text-sm"></p>
+  </main>
+
+  <script>
+    // --- fonctions utilitaires ---
+    function getParam(name) {
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name) || "";
+    }
+
+    function resizeCanvas(canvas) {
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * ratio;
+      canvas.height = rect.height * ratio;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(ratio, ratio);
+    }
+
+    // --- récupération des paramètres URL ---
+    const attendeeId = getParam('id');
+    const fullName = getParam('name') || `${getParam('prenom')} ${getParam('nom')}`.trim();
+    const email = getParam('email');
+    const session = getParam('session');
+
+    // --- affichage infos ---
+    document.getElementById('displayName').textContent = fullName || '—';
+    document.getElementById('displayEmail').textContent = email || '—';
+    document.getElementById('displaySession').textContent = session || '—';
+    document.getElementById('displayId').textContent = attendeeId || '—';
+
+    // --- signature pad setup ---
+    const canvas = document.getElementById('signature-canvas');
+    const submitBtn = document.getElementById('submitBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusEl = document.getElementById('status');
+    const consent = document.getElementById('consent');
+
+    function initPad() {
+      resizeCanvas(canvas);
+      const pad = new SignaturePad(canvas, { backgroundColor: 'rgba(255,255,255,0)', penColor: 'black' });
+      window.addEventListener('resize', () => {
+        const data = pad.toData();
+        resizeCanvas(canvas);
+        pad.fromData(data);
+      });
+      return pad;
+    }
+
+    const signaturePad = initPad();
+
+    clearBtn.addEventListener('click', () => {
+      signaturePad.clear();
+      statusEl.textContent = '';
+    });
+
+    async function postSignature(payload) {
+      const resp = await fetch('/api/signature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error('Échec de l\'envoi');
+      return resp.json();
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      statusEl.textContent = '';
+      if (!consent.checked) {
+        statusEl.textContent = '⚠️ Merci de cocher la case de consentement avant d\'envoyer.';
+        statusEl.className = 'mt-4 text-sm text-red-600';
+        return;
+      }
+      if (signaturePad.isEmpty()) {
+        statusEl.textContent = '⚠️ Merci d\'ajouter votre signature.';
+        statusEl.className = 'mt-4 text-sm text-red-600';
+        return;
+      }
+      submitBtn.disabled = true;
+      statusEl.textContent = 'Envoi en cours…';
+      statusEl.className = 'mt-4 text-sm text-gray-600';
+      try {
+        const dataUrl = signaturePad.toDataURL('image/png');
+        const payload = {
+          attendee_id: attendeeId,
+          name: fullName,
+          email,
+          session,
+          consent: true,
+          signature_data_url: dataUrl,
+          user_agent: navigator.userAgent
+        };
+        const res = await postSignature(payload);
+        statusEl.textContent = `✅ Signature enregistrée. Référence: ${res.ref}`;
+        statusEl.className = 'mt-4 text-sm text-green-700';
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = '❌ Une erreur est survenue lors de l\'envoi. Réessayez.';
+        statusEl.className = 'mt-4 text-sm text-red-600';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
